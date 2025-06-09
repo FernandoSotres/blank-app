@@ -16,9 +16,12 @@ demographics.columns = [
     for col in demographics.columns
 ]
 
-# Buscar los años disponibles
-year_cols = [col for col in demographics.columns if col.isdigit()]
+# Buscar los años disponibles, excluyendo 2023
+year_cols = [col for col in demographics.columns if col.isdigit() and col != "2023"]
 year_cols_sorted = sorted([int(y) for y in year_cols])
+
+# Para las gráficas de dispersión
+year_cols_disp = [col for col in demographics.columns if col.isdigit() and int(col) >= 1974 and col != "2023"]
 
 # ...carga y preparación de datos...
 
@@ -37,7 +40,7 @@ fertility_long['Tasa de Fertilidad'] = pd.to_numeric(fertility_long['Tasa de Fer
 
 def clasificar_fertilidad(x):
     if 1.05 <= x < 2.1:
-        return "Bajo El Equilibrio"
+        return "Bajo el equilibrio"
     elif 2.1 <= x < 4:
         return "Equilibrio"
     elif 4 <= x < 6.3:
@@ -45,19 +48,17 @@ def clasificar_fertilidad(x):
     else:
         return "Triplicación"
 
-# ...código anterior...
-
 orden_grupos = [
-    "Triplicación",
-    "Duplicación",
+    "Bajo el equilibrio",
     "Equilibrio",
-    "Bajo El Equilibrio"
+    "Duplicación",
+    "Triplicación"
 ]
 colores = {
     "Triplicación": "green",
     "Duplicación": "blue",
     "Equilibrio": "orange",
-    "Bajo El Equilibrio": "red"
+    "Bajo el equilibrio": "red"
 }
 
 fertility_long['Grupo Fertilidad'] = fertility_long['Tasa de Fertilidad'].apply(clasificar_fertilidad)
@@ -93,8 +94,17 @@ with st.expander("Ver histograma animado de tasa de fertilidad por grupo"):
     fig.update_yaxes(range=[0, conteo['Número de Países'].max() * 1.35])
     st.plotly_chart(fig)
 
-# --- Dispersión países individuales ---
-with st.expander("Ver dispersión Fertilidad vs Urbanización por país"):
+
+# --- Dispersión países individuales (porcentaje población urbana) ---
+
+# Buscar los años disponibles, excluyendo 2023
+year_cols = [col for col in demographics.columns if col.isdigit() and col != "2023"]
+year_cols_sorted = sorted([int(y) for y in year_cols])
+
+# Para las gráficas de dispersión
+year_cols_disp = [col for col in demographics.columns if col.isdigit() and int(col) >= 1974 and col != "2023"]
+
+with st.expander("% de Urbanización vs Geografía"):
     year_cols_disp = [col for col in demographics.columns if col.isdigit() and int(col) >= 1974]
     to_remove = [
         'Upper middle income', 'Middle income', 'Lower middle income', 'Low income', 'High income'
@@ -105,6 +115,10 @@ with st.expander("Ver dispersión Fertilidad vs Urbanización por país"):
     ]
     df_urban = demographics[
         (demographics['Series Name'] == 'Urban population') &
+        (~demographics['Country Name'].isin(to_remove))
+    ]
+    df_total = demographics[
+        (demographics['Series Name'] == 'Population, total') &
         (~demographics['Country Name'].isin(to_remove))
     ]
     fertility_melted = df_fertility.melt(
@@ -119,39 +133,50 @@ with st.expander("Ver dispersión Fertilidad vs Urbanización por país"):
         var_name='Year',
         value_name='Urban population'
     ).dropna()
-    # Convertir a numérico para evitar errores en el eje Y
-    urban_melted['Urban population'] = pd.to_numeric(urban_melted['Urban population'], errors='coerce')
-    merged = pd.merge(
-        fertility_melted,
-        urban_melted,
-        on=['Country Name', 'Year'],
-        how='inner'
-    )
+    total_melted = df_total.melt(
+        id_vars=['Country Name'],
+        value_vars=year_cols_disp,
+        var_name='Year',
+        value_name='Population, total'
+    ).dropna()
+    merged = pd.merge(fertility_melted, urban_melted, on=['Country Name', 'Year'], how='inner')
+    merged = pd.merge(merged, total_melted, on=['Country Name', 'Year'], how='inner')
     merged['Urban population'] = pd.to_numeric(merged['Urban population'], errors='coerce')
+    merged['Population, total'] = pd.to_numeric(merged['Population, total'], errors='coerce')
+    merged['% Urban Population'] = 100 * merged['Urban population'] / merged['Population, total']
+
     fig2 = px.scatter(
         merged,
         x='Fertility rate, total (births per woman)',
-        y='Urban population',
+        y='% Urban Population',
         color='Country Name',
         animation_frame='Year',
-        title='Índice De Fertilidad vs  Población Urbanizada',
+        title='% de Urbanización vs Geografía',
         labels={
             'Fertility rate, total (births per woman)': 'Tasa De Fertilidad (Hijos Por Mujer)',
-            'Urban population': 'Población Urbanizada'
+            '% Urban Population': '% Población Urbanizada'
         }
     )
     fig2.update_xaxes(range=[0, 7])
-    fig2.update_yaxes(range=[0, merged['Urban population'].max() * 1.05])
+    fig2.update_yaxes(range=[0, 100])
     fig2.update_traces(marker=dict(size=12))
     for frame in fig2.frames:
         frame.name = frame.name.replace("Year=", "Año=")
     fig2.layout.sliders[0].currentvalue.prefix = "Año="
     st.plotly_chart(fig2)
 
-# --- Dispersión por grupo de ingreso ---
-with st.expander("Ver dispersión por grupo de ingreso"):
+# --- Dispersión por grupo de ingreso (porcentaje población urbana) ---
+
+# Buscar los años disponibles, excluyendo 2023
+year_cols = [col for col in demographics.columns if col.isdigit() and col != "2023"]
+year_cols_sorted = sorted([int(y) for y in year_cols])
+
+# Para las gráficas de dispersión
+year_cols_disp = [col for col in demographics.columns if col.isdigit() and int(col) >= 1974 and col != "2023"]
+
+with st.expander("% de Urbanización por Income Group"):
     income_groups = [
-        'Upper middle income', 'Middle income', 'Lower middle income', 'Low income', 'High income'
+        'High income', 'Upper middle income', 'Middle income', 'Lower middle income', 'Low income'
     ]
     df_fertility_income = demographics[
         (demographics['Series Name'] == 'Fertility rate, total (births per woman)') &
@@ -159,6 +184,10 @@ with st.expander("Ver dispersión por grupo de ingreso"):
     ]
     df_urban_income = demographics[
         (demographics['Series Name'] == 'Urban population') &
+        (demographics['Country Name'].isin(income_groups))
+    ]
+    df_total_income = demographics[
+        (demographics['Series Name'] == 'Population, total') &
         (demographics['Country Name'].isin(income_groups))
     ]
     fertility_melted_income = df_fertility_income.melt(
@@ -171,32 +200,39 @@ with st.expander("Ver dispersión por grupo de ingreso"):
         id_vars=['Country Name'],
         value_vars=year_cols_disp,
         var_name='Year',
-        value_name='Población Urbanizada'
+        value_name='Urban population'
     ).dropna()
-    # Convertir a numérico para evitar errores en el eje Y
-    urban_melted_income['Población Urbanizada'] = pd.to_numeric(urban_melted_income['Población Urbanizada'], errors='coerce')
-    merged_income = pd.merge(
-        fertility_melted_income,
-        urban_melted_income,
-        on=['Country Name', 'Year'],
-        how='inner'
-    )
-    merged_income['Población Urbanizada'] = pd.to_numeric(merged_income['Población Urbanizada'], errors='coerce')
+    total_melted_income = df_total_income.melt(
+        id_vars=['Country Name'],
+        value_vars=year_cols_disp,
+        var_name='Year',
+        value_name='Population, total'
+    ).dropna()
+    merged_income = pd.merge(fertility_melted_income, urban_melted_income, on=['Country Name', 'Year'], how='inner')
+    merged_income = pd.merge(merged_income, total_melted_income, on=['Country Name', 'Year'], how='inner')
+    merged_income['Urban population'] = pd.to_numeric(merged_income['Urban population'], errors='coerce')
+    merged_income['Population, total'] = pd.to_numeric(merged_income['Population, total'], errors='coerce')
+    merged_income['% Urban Population'] = 100 * merged_income['Urban population'] / merged_income['Population, total']
+
+    income_order = [
+        'High income', 'Upper middle income', 'Middle income', 'Lower middle income', 'Low income'
+    ]
     fig3 = px.scatter(
         merged_income,
         x='Tasa De Fertilidad (Hijos Por Mujer)',
-        y='Población Urbanizada',
+        y='% Urban Population',
         color='Country Name',
         animation_frame='Year',
-        title='Índice De Fertilidad vs  Población Urbanizada (Grupos de Ingreso)',
+        category_orders={'Country Name': income_order},
+        title='% de Urbanización por Income Group',
         labels={
             'Tasa De Fertilidad (Hijos Por Mujer)': 'Tasa De Fertilidad (Hijos Por Mujer)',
-            'Población Urbanizada': 'Población Urbanizada',
+            '% Urban Population': '% Población Urbanizada',
             'Country Name': 'Grupo de Ingreso'
         }
     )
     fig3.update_xaxes(range=[0, 7])
-    fig3.update_yaxes(range=[0, merged_income['Población Urbanizada'].max() * 1.05])
+    fig3.update_yaxes(range=[0, 100])
     fig3.update_traces(marker=dict(size=12))
     for frame in fig3.frames:
         frame.name = frame.name.replace("Year=", "Año=")
